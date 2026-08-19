@@ -171,9 +171,14 @@ PLUGIN_CFG = {
 viz = {"id": "viz", "kind": "plugin", "pluginId": PLUGIN, "config": {
     "source": {"kind": "element", "elementId": "surveys"},
     "surfaceSource": {"kind": "element", "elementId": "grid"},
-    "columns": ["s-well", "s-e", "s-n", "s-tvd", "s-md", "s-dls", "s-prop",
-                "s-stage", "s-rop", "s-inc", "s-form", "s-pad"],
-    "surfaceColumns": ["g-form", "g-e", "g-n", "g-tvd", "g-build"],
+    # A spec-authored multi-column binding did NOT make Sigma deliver rows (metadata arrived,
+    # data did not). The plugin registers the columns it needs at runtime via
+    # config.setKey("columns", [...]), which is the verified path — so leave these out.
+    # Set DECLARE_COLS=1 to put them back for comparison.
+    **({"columns": ["s-well", "s-e", "s-n", "s-tvd", "s-md", "s-dls", "s-prop",
+                    "s-stage", "s-rop", "s-inc", "s-form", "s-pad"],
+        "surfaceColumns": ["g-form", "g-e", "g-n", "g-tvd", "g-build"]}
+       if os.environ.get("DECLARE_COLS") == "1" else {}),
     "wellVar": "SelWell",
     "layerVar": "SelLayer",
     "config": json.dumps(PLUGIN_CFG),
