@@ -294,6 +294,7 @@
     var hiddenWells = {};
     var wellOrder = [];         // stable, sorted — color follows the well, not its rank
     var autoMapped = false, colsSynced = false, plotReady = false, demoMode = false;
+    var loading = false, loadTimer = null;
     var panelCollapsed = false;
 
     var stage = document.getElementById("stage");
@@ -361,6 +362,22 @@
       return lo <= hi ? [lo, hi] : [0, 1];
     }
     function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+    function setLoading(on) {
+      if (!inSigma || on === loading) return;
+      loading = on;
+      try {
+        if (client.config && typeof client.config.setLoadingState === "function")
+          client.config.setLoadingState(on);
+        else if (typeof client.setLoadingState === "function") client.setLoadingState(on);
+      } catch (e) { /* older SDK — nothing to signal */ }
+    }
+    function beginLoading() {
+      setLoading(true);
+      clearTimeout(loadTimer);
+      loadTimer = setTimeout(function () { setLoading(false); }, 12000);  // never spin forever
+    }
+    function endLoading() { clearTimeout(loadTimer); setLoading(false); }
 
     /* =====================================================================
        5. Demo data — realistic pad of unconventional wells + formation grids
@@ -840,12 +857,24 @@
       if (!m.x || !m.y || !m.z || !DATA[m.x] || !DATA[m.y] || !DATA[m.z]) {
         plotReady = false;
         Plotly.purge(plotEl);
-        showMsg(inSigma && !CONFIG.source ? "Pick a data source" : "Map the survey geometry",
-          inSigma
-            ? "In the plugin panel choose your well-survey element, then turn on <b>Edit mode</b> and map " +
-              "<code>Easting</code>, <code>Northing</code> and <code>TVD</code>. " +
-              "Flip on <b>Use built-in demo wells</b> to see the viewer with sample data."
-            : "Loading demo wells…");
+        var mapped = !!(m.x && m.y && m.z);
+        if (!inSigma) {
+          showMsg("Loading demo wells…", "");
+        } else if (!CONFIG.source) {
+          showMsg("Pick a data source",
+            "Choose your well-survey element in the plugin panel, then turn on <b>Edit mode</b> to map " +
+            "<code>Easting</code>, <code>Northing</code> and <code>TVD</code>.");
+        } else if (mapped) {
+          // configured correctly — Sigma just hasn't delivered the columns yet
+          showMsg("Waiting for survey data…",
+            "The geometry is mapped; Sigma is still sending <code>" + esc(colName(m.x, COLS)) + "</code>, " +
+            "<code>" + esc(colName(m.y, COLS)) + "</code> and <code>" + esc(colName(m.z, COLS)) + "</code>. " +
+            "If this persists, re-save the mapping in <b>Edit mode</b> so the columns get registered.");
+        } else {
+          showMsg("Map the survey geometry",
+            "Turn on <b>Edit mode</b> and map <code>Easting</code>, <code>Northing</code> and <code>TVD</code>. " +
+            "Flip on <b>Use built-in demo wells</b> to see the viewer with sample data.");
+        }
         return;
       }
       hideMsg();
@@ -860,6 +889,7 @@
       var draw = plotReady ? Plotly.react(plotEl, traces, layout, PLOT_CFG)
                            : Plotly.newPlot(plotEl, traces, layout, PLOT_CFG);
       draw.then(function () {
+        endLoading();
         if (!plotReady) {
           plotReady = true;
           lastW = stage.clientWidth; lastH = stage.clientHeight;
@@ -1305,8 +1335,11 @@
             syncColumns();
             renderToolbar(); renderPlot();
           });
+          beginLoading();
           unsubD = client.elements.subscribeToElementData(src, function (d) {
-            DATA = d || {}; renderPlot();
+            DATA = d || {};
+            if (Object.keys(DATA).length) endLoading();
+            renderPlot();
           });
         }
       }

@@ -146,3 +146,34 @@ through — the plugin only ever draws the rows it is given.
 | A mapped column shows `—` | Sigma only delivers declared columns. The plugin registers them automatically on save; re-save the mapping if you hand-edited the config JSON. |
 | Nothing renders, no message | check that Easting / Northing / TVD are all mapped to numeric columns and that some rows have all three non-null. |
 | Labels overlap in Plan view | the vertical stagger can't separate labels when you look straight down the depth axis — turn **Well labels** off for plan work. |
+
+---
+
+## Testing it against real Sigma data
+
+`build_test_workbook.py` builds a whole test workbook via the workbooks-as-code API —
+10 wells, ~470 frac stages and 3 formation-top grids, all generated in-warehouse with
+Snowflake generators, so it needs no source tables:
+
+```bash
+python3 build_test_workbook.py "$SIGMA_BASE_URL" "$SIGMA_API_TOKEN" <CONNECTION_ID> <PLUGIN_ID> <FOLDER_ID>
+```
+
+Add `--update <WORKBOOK_ID>` to re-publish over an existing one, or `PLUGIN_DEMO=1` to
+build it with the plugin's demo toggle on. The workbook wires up:
+
+- **Pad** and **Target formation** list controls filtering the survey table — the plugin
+  redraws from whatever rows survive the filter.
+- A **Selected well** text control bound to the plugin's `wellVar`, which filters the
+  Completion Stages table underneath. Click a trajectory, the table follows.
+- A **Formation layer shown** text control bound to `layerVar`.
+
+### Sigma's PNG/PDF export does not give plugins row data
+
+Worth knowing before you debug a blank plugin: in a server-side export
+(`POST /v2/workbooks/{id}/export`), plugin iframes receive their config **and their
+column metadata**, but **not the element's rows**. Verified by putting Sigma's own
+sample bar-chart plugin on the same page — it drew its legend from the column names
+and then no bars. So an exported PNG will always show this plugin's
+"Waiting for survey data…" state even when the workbook is fine in the browser. Use
+`PLUGIN_DEMO=1` if you want an export that actually shows the 3D scene.
