@@ -168,19 +168,36 @@ PLUGIN_CFG = {
              "showStages": True, "showSurface": True, "showLabels": True, "showFootprint": False,
              "projection": "perspective", "layer": "WCA", "camera": None, "camAR": ""},
 }
+SURVEY_BINDING = ["s-well", "s-e", "s-n", "s-tvd", "s-md", "s-dls", "s-prop",
+                  "s-stage", "s-rop", "s-inc", "s-form", "s-pad"]
+GRID_BINDING = ["g-form", "g-e", "g-n", "g-tvd", "g-build"]
+
+def control_binding(control_id):
+    """A variable / action binding. Same lesson as col_binding: it must be an object.
+    A bare "SelWell" string does not resolve, and the plugin's setVariable then surfaces
+    "Control variable name: <panel entry> not found" as a toast in the workbook.
+    """
+    return {"kind": "control", "controlId": control_id}
+
+
+def col_binding(column_ids, source_entry):
+    """A multi-column plugin binding, in the ONLY shape Sigma actually resolves.
+
+    A bare list of column ids passes spec validation and round-trips into the saved
+    YAML, but Sigma never delivers rows for it — the plugin sees column metadata and
+    no data, which in published mode it cannot fix (config.setKey needs write access
+    to the workbook, so a viewer's runtime re-registration silently fails).
+    `source` is the NAME of the element panel entry, not the element id.
+    """
+    return {"kind": "column", "columnIds": list(column_ids), "source": source_entry}
+
 viz = {"id": "viz", "kind": "plugin", "pluginId": PLUGIN, "config": {
     "source": {"kind": "element", "elementId": "surveys"},
     "surfaceSource": {"kind": "element", "elementId": "grid"},
-    # A spec-authored multi-column binding did NOT make Sigma deliver rows (metadata arrived,
-    # data did not). The plugin registers the columns it needs at runtime via
-    # config.setKey("columns", [...]), which is the verified path — so leave these out.
-    # Set DECLARE_COLS=1 to put them back for comparison.
-    **({"columns": ["s-well", "s-e", "s-n", "s-tvd", "s-md", "s-dls", "s-prop",
-                    "s-stage", "s-rop", "s-inc", "s-form", "s-pad"],
-        "surfaceColumns": ["g-form", "g-e", "g-n", "g-tvd", "g-build"]}
-       if os.environ.get("DECLARE_COLS") == "1" else {}),
-    "wellVar": "SelWell",
-    "layerVar": "SelLayer",
+    "columns": col_binding(SURVEY_BINDING, "source"),
+    "surfaceColumns": col_binding(GRID_BINDING, "surfaceSource"),
+    "wellVar": control_binding("SelWell"),
+    "layerVar": control_binding("SelLayer"),
     "config": json.dumps(PLUGIN_CFG),
     "editMode": False,
     "demo": os.environ.get("PLUGIN_DEMO") == "1",

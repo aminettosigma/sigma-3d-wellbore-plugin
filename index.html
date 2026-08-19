@@ -948,22 +948,49 @@
       } catch (e) { /* internals moved — the well list still selects */ }
       return null;
     }
+    // Orbiting ends with a mouseup -> click on the canvas, so a plain click listener treats every
+    // rotate as a selection. Only count it if the pointer barely moved since mousedown.
+    var downPt = null;
+    plotEl.addEventListener("mousedown", function (ev) {
+      downPt = { x: ev.clientX, y: ev.clientY };
+    });
     plotEl.addEventListener("click", function (ev) {
       if (Date.now() - clickedAt < 400) return;          // plotly_click already handled it
+      var dragged = downPt && (Math.abs(ev.clientX - downPt.x) > 4 ||
+                               Math.abs(ev.clientY - downPt.y) > 4);
+      downPt = null;
+      if (dragged) return;                                // that was an orbit/pan, not a pick
       toggleSelected(pickWell(ev));
     });
     function toggleSelected(w) {
       if (!w) return;
       setSelected(selectedWell === w ? null : w);
     }
+    // A binding is stored as {kind:"control", controlId:"X"} (older specs used a bare "X").
+    // Sigma resolves the CONTROL id, not the editor-panel entry name.
+    function bindingRef(entry) {
+      var v = CONFIG[entry];
+      if (!v) return null;
+      if (typeof v === "string") return v;
+      if (typeof v === "object") return v.controlId || v.variableId || v.name || null;
+      return null;
+    }
+    function writeVariable(entry, value) {
+      if (!inSigma || !CONFIG[entry]) return;
+      var ref = bindingRef(entry) || entry;
+      try { client.config.setVariable(ref, value); }
+      catch (e) { console.warn("setVariable(" + ref + ") failed", e); }
+    }
+    function fireAction(entry) {
+      if (!inSigma || !CONFIG[entry]) return;
+      var ref = bindingRef(entry) || entry;
+      try { client.config.triggerAction(ref); }
+      catch (e) { console.warn("triggerAction(" + ref + ") failed", e); }
+    }
     function setSelected(w) {
       selectedWell = w;
-      if (inSigma) {
-        try {
-          if (CONFIG.wellVar) client.config.setVariable("wellVar", String(w || ""));
-          if (CONFIG.onSelect) client.config.triggerAction("onSelect");
-        } catch (e) { console.warn("select writeback failed", e); }
-      }
+      writeVariable("wellVar", String(w || ""));
+      fireAction("onSelect");
       renderPlot();
     }
     function renderChip() {
@@ -1062,9 +1089,7 @@
 
       if (g("pLayer")) g("pLayer").onchange = set(function () {
         VIEW.layer = g("pLayer").value;
-        if (inSigma && CONFIG.layerVar) {
-          try { client.config.setVariable("layerVar", String(VIEW.layer || "")); } catch (e) {}
-        }
+        writeVariable("layerVar", String(VIEW.layer || ""));
       });
       if (g("pScale")) { g("pScale").value = VIEW.scale; g("pScale").onchange = set(function () { VIEW.scale = g("pScale").value; }); }
       if (g("pExag")) {

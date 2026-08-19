@@ -143,8 +143,10 @@ through — the plugin only ever draws the rows it is given.
 |---|---|
 | "3D engine failed to load" | the org blocks `cdn.plot.ly`. Download `plotly-gl3d-2.35.2.min.js` next to `index.html` and point the `<script>` tag at it. |
 | "Plugin SDK failed to load" | `unpkg.com` is blocked — vendor `react` and `@sigmacomputing/plugin` the same way. |
-| A mapped column shows `—`, or the viewer sticks on "Waiting for survey data…" | Sigma only sends rows for columns declared through a `column` editor-panel entry. The plugin registers whatever the mapping uses at runtime (`config.setKey("columns", …)`) and retries twice if the rows never arrive; the waiting screen prints how many columns it knows about vs. has data for. Re-saving the mapping in **Edit mode** forces a fresh registration. Note that declaring `columns` in a workbook **spec** did not make Sigma deliver rows in testing — leave it out and let the plugin register them. |
+| Works in Edit mode, sticks on "Waiting for survey data…" when published | The column binding isn't in the *saved* config. Sigma only sends rows for columns declared through a `column` panel entry, and the plugin's runtime fallback (`config.setKey("columns", …)`) writes to the workbook config — fine for an author, silently refused for a viewer. Fix it in the saved spec (see below) or open Edit mode once and **Publish**, which persists the registration the plugin makes. |
+| A mapped column shows `—` | That column isn't in the binding. Re-save the mapping in **Edit mode**; the waiting screen prints columns-known vs columns-with-data to confirm. |
 | Nothing renders, no message | check that Easting / Northing / TVD are all mapped to numeric columns and that some rows have all three non-null. |
+| Rotating the scene selects a well | Fixed — an orbit drag ends in a `click` on the canvas, so selection now requires the pointer to have moved <4 px since mousedown. |
 | Labels overlap in Plan view | the vertical stagger can't separate labels when you look straight down the depth axis — turn **Well labels** off for plan work. |
 
 ---
@@ -167,6 +169,30 @@ build it with the plugin's demo toggle on. The workbook wires up:
 - A **Selected well** text control bound to the plugin's `wellVar`, which filters the
   Completion Stages table underneath. Click a trajectory, the table follows.
 - A **Formation layer shown** text control bound to `layerVar`.
+
+### Every binding in a plugin's spec config is an object with a `kind`
+
+This is the one thing to get right. Bare strings and bare arrays pass spec validation and
+round-trip into the saved YAML, but Sigma never resolves them:
+
+```json
+"source":         { "kind": "element", "elementId": "surveys" },
+"columns":        { "kind": "column", "columnIds": ["s-well", "s-e"], "source": "source" },
+"wellVar":        { "kind": "control", "controlId": "SelWell" }
+```
+
+On a `column` binding, `source` is the **name of the element panel entry** (`"source"`,
+`"surfaceSource"`), not an element id.
+
+The failure modes are distinct and both misleading. A bad **column** binding gives the plugin
+column metadata and no rows — and it still works in Edit mode, because the plugin's
+`setKey("columns", …)` fallback can write the workbook config as an author but is silently
+refused for a viewer. A bad **control** binding makes `setVariable` raise
+`Control variable name: <panel entry> not found` as a toast. `col_binding()` and
+`control_binding()` in `build_test_workbook.py` emit the correct forms.
+
+To recover the canonical shape for any binding: wire it up once in the Sigma UI, publish, and
+read `GET /v2/workbooks/{id}/spec` back — Sigma re-serializes it properly.
 
 ### Sigma's PNG/PDF export does not give plugins row data
 
